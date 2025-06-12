@@ -8,9 +8,7 @@ let firstFrameSent = false;
 let frameLoopId = null;
 let detectLoopId = null;
 
-// OpenCV variables
-let template = null;
-let resizedTemplate = null;
+let templates = []; // Stores multiple templates
 let matchBuffer = null;
 const scale = 0.5;
 const templateSize = 100;
@@ -18,7 +16,7 @@ const minMatchScore = 0.5;
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
-    listCameras();
+    //listCameras();
 }
 
 window.RegisterUnityInstance = RegisterUnityInstance;
@@ -32,27 +30,31 @@ async function listCameras() {
         await navigator.mediaDevices.getUserMedia({ video: true });
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoInputs = devices.filter(d => d.kind === 'videoinput');
-        const options = videoInputs.map(d => ({
-            label: d.label || `Camera ${d.deviceId?.substring(0, 4)}`,
-            deviceId: d.deviceId || ""
-        }));
-        if (unityInstance) {
-            unityInstance.SendMessage('CameraManager', 'OnReceiveCameraList', JSON.stringify(options));
+
+        // Try to find the back camera by label
+        const backCam = videoInputs.find(d => d.label.toLowerCase().includes("back")) || videoInputs[0];
+
+        if (backCam) {
+            await StartFootDetection(backCam.deviceId);
+
+        } else {
+            console.error("No camera found.");
         }
+
     } catch (err) {
         console.error("Camera list error:", err);
     }
 }
 
+
 async function StartFootDetection(deviceId) {
     selectedDeviceId = deviceId;
     firstFrameSent = false;
     cancelLoops();
-
     await waitForOpenCV();
-        console.error("AI Loaded");
+    console.log("OpenCV Loaded");
     await setupCamera(deviceId);
-    // DO NOT start detection yet — wait for template capture
+    // Wait for templates to be captured before starting detection
 }
 
 async function setupCamera(deviceId) {
@@ -88,12 +90,24 @@ async function setupCamera(deviceId) {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-        if (!firstFrameSent) {
-            unityInstance.SendMessage("CameraManager", "OnCameraReady");
-            firstFrameSent = true;
-        }
-    startFrameLoop(); // Start sending frames for UI only
+    // Show foot highlight box
+    const footBox = document.getElementById("footHighlight");
+    footBox.style.display = "block";
 
+    // Center the box based on canvas size
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+
+    // Position it in center (same logic as template capture)
+    footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
+    footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+
+    if (!firstFrameSent && unityInstance) {
+        unityInstance.SendMessage("CameraManager", "OnCameraReady");
+        firstFrameSent = true;
+    }
+
+    startFrameLoop(); // Start sending frames for UI only
 }
 
 function waitForOpenCV() {
@@ -118,15 +132,27 @@ function CaptureFootTemplateFromUnity() {
     const startY = centerY - templateSize / 2;
 
     const imageData = tempCtx.getImageData(startX, startY, templateSize, templateSize);
-    template = cv.matFromImageData(imageData);
-    cv.cvtColor(template, template, cv.COLOR_RGBA2GRAY);
+    const newTemplate = cv.matFromImageData(imageData);
+    cv.cvtColor(newTemplate, newTemplate, cv.COLOR_RGBA2GRAY);
 
-    resizedTemplate = new cv.Mat();
-    cv.resize(template, resizedTemplate, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
+    const resized = new cv.Mat();
+    cv.resize(newTemplate, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
-    console.log("Template captured, starting detection.");
-    startFootDetectionLoop(); // Now start detection
+    templates.push({
+        template: newTemplate,
+        resizedTemplate: resized
+    });
+
+    console.log(`Template ${templates.length} captured.`);
+
+    // Start detection only after capturing two
+    if (templates.length === 2) {
+        startFootDetectionLoop();
+    }
 }
+
+
+
 
 function startFrameLoop() {
     function sendFrame() {
@@ -155,7 +181,7 @@ function startFrameLoop() {
 
 function startFootDetectionLoop() {
     function detect() {
-        if (!resizedTemplate) {
+        if (templates.length === 0) {
             detectLoopId = requestAnimationFrame(detect);
             return;
         }
@@ -170,20 +196,28 @@ function startFootDetectionLoop() {
         cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
         cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
-        if (!matchBuffer || matchBuffer.rows !== (resized.rows - resizedTemplate.rows + 1) || matchBuffer.cols !== (resized.cols - resizedTemplate.cols + 1)) {
-            if (matchBuffer) matchBuffer.delete();
-            matchBuffer = new cv.Mat();
+        let bestMatch = { score: 0, pt: null, templateSize: null };
+
+        for (let { resizedTemplate } of templates) {
+            const result = new cv.Mat();
+            cv.matchTemplate(resized, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
+            const minMax = cv.minMaxLoc(result);
+            const score = minMax.maxVal;
+
+            if (score > bestMatch.score) {
+                bestMatch = {
+                    score,
+                    pt: minMax.maxLoc,
+                    templateSize: resizedTemplate.size()
+                };
+            }
+
+            result.delete();
         }
 
-        const result = matchBuffer;
-        cv.matchTemplate(resized, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
-        const minMax = cv.minMaxLoc(result);
-        const pt = minMax.maxLoc;
-        const score = minMax.maxVal;
-
-        if (score > minMatchScore) {
-            const centerX = (pt.x + resizedTemplate.cols / 2) / scale;
-            const centerY = (pt.y + resizedTemplate.rows / 2) / scale;
+        if (bestMatch.score > minMatchScore) {
+            const centerX = (bestMatch.pt.x + bestMatch.templateSize.width / 2) / scale;
+            const centerY = (bestMatch.pt.y + bestMatch.templateSize.height / 2) / scale;
 
             const normalized = {
                 x: centerX / canvas.width,
@@ -201,6 +235,7 @@ function startFootDetectionLoop() {
 
     detect();
 }
+
 
 function cancelLoops() {
     if (frameLoopId) cancelAnimationFrame(frameLoopId);

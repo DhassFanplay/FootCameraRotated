@@ -28,7 +28,21 @@
 
 
 </head>
+
 <body>
+    <style>
+        #footHighlight {
+            position: fixed;
+            z-index: 9999;
+            border: 3px dashed red;
+            pointer-events: none;
+            display: none;
+            width: 100px;
+            height: 100px;
+        }
+    </style>
+
+    <div id="footHighlight"></div>
 
     <div id="unity-container" class="unity-desktop">
         <canvas id="unity-canvas" width="960" height="600" tabindex="-1"> </canvas>
