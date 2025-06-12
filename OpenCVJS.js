@@ -8,15 +8,15 @@ let firstFrameSent = false;
 let frameLoopId = null;
 let detectLoopId = null;
 
-let templates = []; // Stores multiple templates
+let templates = [];
 let matchBuffer = null;
+
+let templateSize = 100; // Will be overridden dynamically
 const scale = 0.5;
-const templateSize = 100;
-const minMatchScore = 0.5;
+const minMatchScore = 0.75;
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
-    //listCameras();
 }
 
 window.RegisterUnityInstance = RegisterUnityInstance;
@@ -31,12 +31,10 @@ async function listCameras() {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoInputs = devices.filter(d => d.kind === 'videoinput');
 
-        // Try to find the back camera by label
         const backCam = videoInputs.find(d => d.label.toLowerCase().includes("back")) || videoInputs[0];
 
         if (backCam) {
             await StartFootDetection(backCam.deviceId);
-
         } else {
             console.error("No camera found.");
         }
@@ -46,7 +44,6 @@ async function listCameras() {
     }
 }
 
-
 async function StartFootDetection(deviceId) {
     selectedDeviceId = deviceId;
     firstFrameSent = false;
@@ -54,7 +51,6 @@ async function StartFootDetection(deviceId) {
     await waitForOpenCV();
     console.log("OpenCV Loaded");
     await setupCamera(deviceId);
-    // Wait for templates to be captured before starting detection
 }
 
 async function setupCamera(deviceId) {
@@ -90,24 +86,29 @@ async function setupCamera(deviceId) {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    // Show foot highlight box
+
+    // Dynamically compute templateSize (30% of smaller dimension)
+    templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
+
+    // Show highlight box
     const footBox = document.getElementById("footHighlight");
-    footBox.style.display = "block";
+    if (footBox) {
+        footBox.style.width = `${templateSize}px`;
+        footBox.style.height = `${templateSize}px`;
+        footBox.style.display = "block";
 
-    // Center the box based on canvas size
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-
-    // Position it in center (same logic as template capture)
-    footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
-    footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
+        footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+    }
 
     if (!firstFrameSent && unityInstance) {
         unityInstance.SendMessage("CameraManager", "OnCameraReady");
         firstFrameSent = true;
     }
 
-    startFrameLoop(); // Start sending frames for UI only
+    startFrameLoop();
 }
 
 function waitForOpenCV() {
@@ -145,14 +146,12 @@ function CaptureFootTemplateFromUnity() {
 
     console.log(`Template ${templates.length} captured.`);
 
-    // Start detection only after capturing two
     if (templates.length === 2) {
+        const footBox = document.getElementById("footHighlight");
+        if (footBox) footBox.style.display = "none"; // Hide box after 2 templates
         startFootDetectionLoop();
     }
 }
-
-
-
 
 function startFrameLoop() {
     function sendFrame() {
@@ -235,7 +234,6 @@ function startFootDetectionLoop() {
 
     detect();
 }
-
 
 function cancelLoops() {
     if (frameLoopId) cancelAnimationFrame(frameLoopId);
