@@ -54,8 +54,16 @@ async function StartFootDetection(deviceId) {
     await setupCamera(deviceId);
 }
 async function Recalibration() {
-    const footBox1 = document.getElementById("footHighlight");
-    footBox1.style.display = "block";
+    const footBox = document.getElementById("footHighlight");
+    footBox.style.display = "block";
+    if (templates.length >= 2) {
+        templates.forEach(t => {
+            t.template.delete();
+            t.resizedTemplate.delete();
+        });
+        templates.length = 0;
+        console.log("Old templates cleared.");
+    }
 }
 
 async function setupCamera(deviceId) {
@@ -125,7 +133,8 @@ function waitForOpenCV() {
 
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
-
+    // Clear existing templates if already captured 2
+    
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
     tempCanvas.height = video.videoHeight;
