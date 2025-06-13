@@ -24,6 +24,7 @@ window.StartFootDetection = StartFootDetection;
 window.CaptureFootTemplateFromUnity = CaptureFootTemplateFromUnity;
 window.listCameras = listCameras;
 window.setupCamera = setupCamera;
+window.Recalibration = Recalibration;
 
 async function listCameras() {
     try {
@@ -51,6 +52,10 @@ async function StartFootDetection(deviceId) {
     await waitForOpenCV();
     console.log("OpenCV Loaded");
     await setupCamera(deviceId);
+}
+async function Recalibration() {
+    const footBox1 = document.getElementById("footHighlight");
+    footBox1.style.display = "block";
 }
 
 async function setupCamera(deviceId) {
