@@ -11,7 +11,7 @@ let detectLoopId = null;
 let templates = [];
 let matchBuffer = null;
 
-let templateSize = 100; // Will be overridden dynamically 
+let templateSize = 100; // Will be overridden dynamically
 const scale = 0.5;
 const minMatchScore = 0.75;
 
@@ -67,6 +67,14 @@ async function Recalibration() {
 }
 
 async function setupCamera(deviceId) {
+    function log(msg) {
+        console.log(msg);
+        const dbg = document.getElementById("debugLog");
+        if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    }
+
+    log("Setting up camera...");
+
     if (video?.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
         video.srcObject = null;
@@ -76,19 +84,40 @@ async function setupCamera(deviceId) {
         video = document.createElement("video");
         video.setAttribute("autoplay", "");
         video.setAttribute("playsinline", "");
-        video.style.display = "none";
+        video.style.position = "absolute";
+        video.style.left = "-9999px"; // Keep off-screen instead of display: none
         document.body.appendChild(video);
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId } },
-        audio: false
-    });
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const constraints = isMobile
+        ? { video: { facingMode: "environment" }, audio: false }
+        : { video: { deviceId: { exact: deviceId } }, audio: false };
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        log("Camera stream obtained.");
+    } catch (e) {
+        log(`getUserMedia failed: ${e.name} - ${e.message}`);
+        return;
+    }
 
     video.srcObject = stream;
-    await new Promise(resolve => {
-        video.onloadedmetadata = () => video.play().then(resolve).catch(resolve);
-    });
+
+    try {
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject("Timeout loading video metadata"), 3000);
+            video.onloadedmetadata = () => {
+                clearTimeout(timeout);
+                video.play().then(resolve).catch(reject);
+            };
+        });
+        log("Video metadata loaded.");
+    } catch (e) {
+        log(`Video play error: ${e}`);
+        return;
+    }
 
     if (!canvas) {
         canvas = document.createElement("canvas");
@@ -100,10 +129,9 @@ async function setupCamera(deviceId) {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    // Dynamically compute templateSize (30% of smaller dimension)
     templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
+    log(`Template size set to ${templateSize}px.`);
 
-    // Show highlight box
     const footBox = document.getElementById("footHighlight");
     if (footBox) {
         footBox.style.width = `${templateSize}px`;
@@ -119,10 +147,18 @@ async function setupCamera(deviceId) {
     if (!firstFrameSent && unityInstance) {
         unityInstance.SendMessage("CameraManager", "OnCameraReady");
         firstFrameSent = true;
+        log("Unity notified: Camera ready.");
     }
 
     startFrameLoop();
 }
+function log(msg) {
+    console.log(msg); // Logs to browser DevTools console
+
+    const dbg = document.getElementById("debugLog");
+    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+}
+
 
 function waitForOpenCV() {
     return new Promise(resolve => {
