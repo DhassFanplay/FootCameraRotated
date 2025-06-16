@@ -11,7 +11,7 @@ let detectLoopId = null;
 let templates = [];
 let matchBuffer = null;
 
-let templateSize = 100; // Will be overridden dynamically
+let templateSize = 100; // Will be overridden dynamically 
 const scale = 0.5;
 const minMatchScore = 0.75;
 
