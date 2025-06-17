@@ -99,64 +99,61 @@ async function setupCamera(deviceId) {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         log("Camera stream obtained.");
     } catch (e) {
-    if (e.name === "NotReadableError") {
-        log("Camera is already in use by another application or browser tab.");
-    } else {
-        log(`getUserMedia failed: ${e.name} - ${e.message}`);
+        if (e.name === "NotReadableError") {
+            log("Camera is already in use by another application or browser tab.");
+        } else {
+            log(`getUserMedia failed: ${e.name} - ${e.message}`);
+        }
+        return;
     }
+video.srcObject = stream;
+
+try {
+    await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject("Timeout loading video metadata"), 3000);
+        video.onloadedmetadata = () => {
+            clearTimeout(timeout);
+            video.play().then(resolve).catch(reject);
+        };
+    });
+    log("Video metadata loaded.");
+} catch (e) {
+    log(`Video play error: ${e}`);
     return;
 }
 
-    }
+if (!canvas) {
+    canvas = document.createElement("canvas");
+    canvas.style.display = "none";
+    document.body.appendChild(canvas);
+    ctx = canvas.getContext("2d");
+}
 
-    video.srcObject = stream;
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
 
-    try {
-        await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject("Timeout loading video metadata"), 3000);
-            video.onloadedmetadata = () => {
-                clearTimeout(timeout);
-                video.play().then(resolve).catch(reject);
-            };
-        });
-        log("Video metadata loaded.");
-    } catch (e) {
-        log(`Video play error: ${e}`);
-        return;
-    }
+templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
+log(`Template size set to ${templateSize}px.`);
 
-    if (!canvas) {
-        canvas = document.createElement("canvas");
-        canvas.style.display = "none";
-        document.body.appendChild(canvas);
-        ctx = canvas.getContext("2d");
-    }
+const footBox = document.getElementById("footHighlight");
+if (footBox) {
+    footBox.style.width = `${templateSize}px`;
+    footBox.style.height = `${templateSize}px`;
+    footBox.style.display = "block";
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
+    footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+}
 
-    templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
-    log(`Template size set to ${templateSize}px.`);
+if (!firstFrameSent && unityInstance) {
+    unityInstance.SendMessage("CameraManager", "OnCameraReady");
+    firstFrameSent = true;
+    log("Unity notified: Camera ready.");
+}
 
-    const footBox = document.getElementById("footHighlight");
-    if (footBox) {
-        footBox.style.width = `${templateSize}px`;
-        footBox.style.height = `${templateSize}px`;
-        footBox.style.display = "block";
-
-        const screenWidth = window.innerWidth;
-        const screenHeight = window.innerHeight;
-        footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
-        footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
-    }
-
-    if (!firstFrameSent && unityInstance) {
-        unityInstance.SendMessage("CameraManager", "OnCameraReady");
-        firstFrameSent = true;
-        log("Unity notified: Camera ready.");
-    }
-
-    startFrameLoop();
+startFrameLoop();
 }
 function log(msg) {
     console.log(msg); // Logs to browser DevTools console
@@ -176,7 +173,7 @@ function waitForOpenCV() {
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
     // Clear existing templates if already captured 2
-    
+
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
     tempCanvas.height = video.videoHeight;
