@@ -99,8 +99,14 @@ async function setupCamera(deviceId) {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         log("Camera stream obtained.");
     } catch (e) {
+    if (e.name === "NotReadableError") {
+        log("Camera is already in use by another application or browser tab.");
+    } else {
         log(`getUserMedia failed: ${e.name} - ${e.message}`);
-        return;
+    }
+    return;
+}
+
     }
 
     video.srcObject = stream;
