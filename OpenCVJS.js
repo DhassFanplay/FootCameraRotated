@@ -27,32 +27,17 @@ window.setupCamera = setupCamera;
 window.Recalibration = Recalibration;
 
 async function listCameras() {
-    try {
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = devices.filter(d => d.kind === 'videoinput');
-
-        const backCam = videoInputs.find(d => d.label.toLowerCase().includes("back")) || videoInputs[0];
-
-        if (backCam) {
-            await StartFootDetection(backCam.deviceId);
-        } else {
-            console.error("No camera found.");
-        }
-
-    } catch (err) {
-        console.error("Camera list error:", err);
-    }
+    await StartFootDetection();
 }
 
-async function StartFootDetection(deviceId) {
-    selectedDeviceId = deviceId;
+async function StartFootDetection() {
     firstFrameSent = false;
     cancelLoops();
     await waitForOpenCV();
     console.log("OpenCV Loaded");
-    await setupCamera(deviceId);
+    await setupCamera(); // No need to pass deviceId anymore
 }
+
 async function Recalibration() {
     const footBox = document.getElementById("footHighlight");
     footBox.style.display = "block";
@@ -66,13 +51,7 @@ async function Recalibration() {
     }
 }
 
-async function setupCamera(deviceId) {
-    function log(msg) {
-        console.log(msg);
-        const dbg = document.getElementById("debugLog");
-        if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    }
-
+async function setupCamera() {
     log("Setting up camera...");
 
     if (video?.srcObject) {
@@ -85,14 +64,16 @@ async function setupCamera(deviceId) {
         video.setAttribute("autoplay", "");
         video.setAttribute("playsinline", "");
         video.style.position = "absolute";
-        video.style.left = "-9999px"; // Keep off-screen instead of display: none
+        video.style.left = "-9999px";
         document.body.appendChild(video);
     }
 
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const constraints = isMobile
-        ? { video: { facingMode: "environment" }, audio: false }
-        : { video: { deviceId: { exact: deviceId } }, audio: false };
+    const constraints = {
+        video: {
+            facingMode: { ideal: "environment" } // ✅ Always tries for back camera
+        },
+        audio: false
+    };
 
     let stream;
     try {
@@ -100,61 +81,63 @@ async function setupCamera(deviceId) {
         log("Camera stream obtained.");
     } catch (e) {
         if (e.name === "NotReadableError") {
-            log("Camera is already in use by another application or browser tab.");
+            log("Camera is already in use by another app or tab.");
         } else {
             log(`getUserMedia failed: ${e.name} - ${e.message}`);
         }
         return;
     }
-video.srcObject = stream;
 
-try {
-    await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject("Timeout loading video metadata"), 3000);
-        video.onloadedmetadata = () => {
-            clearTimeout(timeout);
-            video.play().then(resolve).catch(reject);
-        };
-    });
-    log("Video metadata loaded.");
-} catch (e) {
-    log(`Video play error: ${e}`);
-    return;
+    video.srcObject = stream;
+
+    try {
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject("Timeout loading video metadata"), 3000);
+            video.onloadedmetadata = () => {
+                clearTimeout(timeout);
+                video.play().then(resolve).catch(reject);
+            };
+        });
+        log("Video metadata loaded.");
+    } catch (e) {
+        log(`Video play error: ${e}`);
+        return;
+    }
+
+    if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.style.display = "none";
+        document.body.appendChild(canvas);
+        ctx = canvas.getContext("2d");
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
+    log(`Template size set to ${templateSize}px.`);
+
+    const footBox = document.getElementById("footHighlight");
+    if (footBox) {
+        footBox.style.width = `${templateSize}px`;
+        footBox.style.height = `${templateSize}px`;
+        footBox.style.display = "block";
+
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
+        footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+    }
+
+    if (!firstFrameSent && unityInstance) {
+        unityInstance.SendMessage("CameraManager", "OnCameraReady");
+        firstFrameSent = true;
+        log("Unity notified: Camera ready.");
+    }
+
+    startFrameLoop();
 }
 
-if (!canvas) {
-    canvas = document.createElement("canvas");
-    canvas.style.display = "none";
-    document.body.appendChild(canvas);
-    ctx = canvas.getContext("2d");
-}
-
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-
-templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
-log(`Template size set to ${templateSize}px.`);
-
-const footBox = document.getElementById("footHighlight");
-if (footBox) {
-    footBox.style.width = `${templateSize}px`;
-    footBox.style.height = `${templateSize}px`;
-    footBox.style.display = "block";
-
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
-    footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
-}
-
-if (!firstFrameSent && unityInstance) {
-    unityInstance.SendMessage("CameraManager", "OnCameraReady");
-    firstFrameSent = true;
-    log("Unity notified: Camera ready.");
-}
-
-startFrameLoop();
-}
 function log(msg) {
     console.log(msg); // Logs to browser DevTools console
 
