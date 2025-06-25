@@ -11,9 +11,10 @@ let detectLoopId = null;
 let templates = [];
 let matchBuffer = null;
 
-let templateSize = 100; // Will be overridden dynamically
+let templateSize = 100;
 const scale = 0.5;
 const minMatchScore = 0.75;
+const verticalOffset = 0.2; // Move foot detection box slightly lower (20% of screen)
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
@@ -35,7 +36,7 @@ async function StartFootDetection() {
     cancelLoops();
     await waitForOpenCV();
     console.log("OpenCV Loaded");
-    await setupCamera(); // No need to pass deviceId anymore
+    await setupCamera();
 }
 
 async function Recalibration() {
@@ -70,7 +71,7 @@ async function setupCamera() {
 
     const constraints = {
         video: {
-            facingMode: { ideal: "environment" } // ✅ Always tries for back camera
+            facingMode: { ideal: "environment" }
         },
         audio: false
     };
@@ -80,11 +81,7 @@ async function setupCamera() {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         log("Camera stream obtained.");
     } catch (e) {
-        if (e.name === "NotReadableError") {
-            log("Camera is already in use by another app or tab.");
-        } else {
-            log(`getUserMedia failed: ${e.name} - ${e.message}`);
-        }
+        log(`getUserMedia failed: ${e.name} - ${e.message}`);
         return;
     }
 
@@ -119,14 +116,14 @@ async function setupCamera() {
 
     const footBox = document.getElementById("footHighlight");
     if (footBox) {
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
         footBox.style.width = `${templateSize}px`;
         footBox.style.height = `${templateSize}px`;
         footBox.style.display = "block";
 
-        const screenWidth = window.innerWidth;
-        const screenHeight = window.innerHeight;
         footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
-        footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+        footBox.style.top = `${(screenHeight - templateSize) / 2 + screenHeight * verticalOffset}px`;
     }
 
     if (!firstFrameSent && unityInstance) {
@@ -138,24 +135,8 @@ async function setupCamera() {
     startFrameLoop();
 }
 
-function log(msg) {
-    console.log(msg); // Logs to browser DevTools console
-
-    const dbg = document.getElementById("debugLog");
-    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-}
-
-
-function waitForOpenCV() {
-    return new Promise(resolve => {
-        const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
-        check();
-    });
-}
-
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
-    // Clear existing templates if already captured 2
 
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
@@ -164,7 +145,7 @@ function CaptureFootTemplateFromUnity() {
 
     tempCtx.drawImage(video, 0, 0);
     const centerX = Math.floor(video.videoWidth / 2);
-    const centerY = Math.floor(video.videoHeight / 2);
+    const centerY = Math.floor(video.videoHeight / 2 + video.videoHeight * verticalOffset); // Shift capture lower
     const startX = centerX - templateSize / 2;
     const startY = centerY - templateSize / 2;
 
@@ -184,7 +165,7 @@ function CaptureFootTemplateFromUnity() {
 
     if (templates.length === 2) {
         const footBox = document.getElementById("footHighlight");
-        if (footBox) footBox.style.display = "none"; // Hide box after 2 templates
+        if (footBox) footBox.style.display = "none";
         startFootDetectionLoop();
     }
 }
@@ -276,4 +257,17 @@ function cancelLoops() {
     if (detectLoopId) cancelAnimationFrame(detectLoopId);
     frameLoopId = null;
     detectLoopId = null;
+}
+
+function log(msg) {
+    console.log(msg);
+    const dbg = document.getElementById("debugLog");
+    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+}
+
+function waitForOpenCV() {
+    return new Promise(resolve => {
+        const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
+        check();
+    });
 }
