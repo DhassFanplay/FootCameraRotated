@@ -15,6 +15,7 @@ let templateSize = 100;
 const scale = 0.5;
 const minMatchScore = 0.75;
 const verticalOffset = 0.1; // Move foot detection box slightly lower (20% of screen)
+const ENABLE_DEBUG = false;
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
@@ -260,6 +261,7 @@ function cancelLoops() {
 }
 
 function log(msg) {
+    if (!ENABLE_DEBUG) return;
     console.log(msg);
     const dbg = document.getElementById("debugLog");
     dbg.style.display = "none";
