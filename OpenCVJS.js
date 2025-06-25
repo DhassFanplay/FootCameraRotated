@@ -14,7 +14,7 @@ let matchBuffer = null;
 let templateSize = 100;
 const scale = 0.5;
 const minMatchScore = 0.75;
-const verticalOffset = 0.2; // Move foot detection box slightly lower (20% of screen)
+const verticalOffset = 0.1; // Move foot detection box slightly lower (20% of screen)
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
