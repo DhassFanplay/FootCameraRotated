@@ -262,6 +262,7 @@ function cancelLoops() {
 function log(msg) {
     console.log(msg);
     const dbg = document.getElementById("debugLog");
+    dbg.style.display = "none";
     if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
 }
 
