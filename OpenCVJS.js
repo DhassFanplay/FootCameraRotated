@@ -1,4 +1,4 @@
-let selectedDeviceId = null;
+﻿let selectedDeviceId = null;
 let unityInstance = null;
 let video = null;
 let canvas = null;
@@ -11,9 +11,10 @@ let detectLoopId = null;
 let templates = [];
 let matchBuffer = null;
 
-let templateSize = 100; // Will be overridden dynamically
+let templateSize = 100;
 const scale = 0.5;
 const minMatchScore = 0.75;
+const verticalOffset = 0.2; // Move foot detection box slightly lower (20% of screen)
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
@@ -27,32 +28,17 @@ window.setupCamera = setupCamera;
 window.Recalibration = Recalibration;
 
 async function listCameras() {
-    try {
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = devices.filter(d => d.kind === 'videoinput');
-
-        const backCam = videoInputs.find(d => d.label.toLowerCase().includes("back")) || videoInputs[0];
-
-        if (backCam) {
-            await StartFootDetection(backCam.deviceId);
-        } else {
-            console.error("No camera found.");
-        }
-
-    } catch (err) {
-        console.error("Camera list error:", err);
-    }
+    await StartFootDetection();
 }
 
-async function StartFootDetection(deviceId) {
-    selectedDeviceId = deviceId;
+async function StartFootDetection() {
     firstFrameSent = false;
     cancelLoops();
     await waitForOpenCV();
     console.log("OpenCV Loaded");
-    await setupCamera(deviceId);
+    await setupCamera();
 }
+
 async function Recalibration() {
     const footBox = document.getElementById("footHighlight");
     footBox.style.display = "block";
@@ -66,13 +52,7 @@ async function Recalibration() {
     }
 }
 
-async function setupCamera(deviceId) {
-    function log(msg) {
-        console.log(msg);
-        const dbg = document.getElementById("debugLog");
-        if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    }
-
+async function setupCamera() {
     log("Setting up camera...");
 
     if (video?.srcObject) {
@@ -85,14 +65,16 @@ async function setupCamera(deviceId) {
         video.setAttribute("autoplay", "");
         video.setAttribute("playsinline", "");
         video.style.position = "absolute";
-        video.style.left = "-9999px"; // Keep off-screen instead of display: none
+        video.style.left = "-9999px";
         document.body.appendChild(video);
     }
 
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const constraints = isMobile
-        ? { video: { facingMode: "environment" }, audio: false }
-        : { video: { deviceId: { exact: deviceId } }, audio: false };
+    const constraints = {
+        video: {
+            facingMode: { ideal: "environment" }
+        },
+        audio: false
+    };
 
     let stream;
     try {
@@ -134,14 +116,14 @@ async function setupCamera(deviceId) {
 
     const footBox = document.getElementById("footHighlight");
     if (footBox) {
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
         footBox.style.width = `${templateSize}px`;
         footBox.style.height = `${templateSize}px`;
         footBox.style.display = "block";
 
-        const screenWidth = window.innerWidth;
-        const screenHeight = window.innerHeight;
         footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
-        footBox.style.top = `${(screenHeight - templateSize) / 2}px`;
+        footBox.style.top = `${(screenHeight - templateSize) / 2 + screenHeight * verticalOffset}px`;
     }
 
     if (!firstFrameSent && unityInstance) {
@@ -152,25 +134,10 @@ async function setupCamera(deviceId) {
 
     startFrameLoop();
 }
-function log(msg) {
-    console.log(msg); // Logs to browser DevTools console
-
-    const dbg = document.getElementById("debugLog");
-    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-}
-
-
-function waitForOpenCV() {
-    return new Promise(resolve => {
-        const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
-        check();
-    });
-}
 
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
-    // Clear existing templates if already captured 2
-    
+
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
     tempCanvas.height = video.videoHeight;
@@ -178,7 +145,7 @@ function CaptureFootTemplateFromUnity() {
 
     tempCtx.drawImage(video, 0, 0);
     const centerX = Math.floor(video.videoWidth / 2);
-    const centerY = Math.floor(video.videoHeight / 2);
+    const centerY = Math.floor(video.videoHeight / 2 + video.videoHeight * verticalOffset); // Shift capture lower
     const startX = centerX - templateSize / 2;
     const startY = centerY - templateSize / 2;
 
@@ -198,7 +165,7 @@ function CaptureFootTemplateFromUnity() {
 
     if (templates.length === 2) {
         const footBox = document.getElementById("footHighlight");
-        if (footBox) footBox.style.display = "none"; // Hide box after 2 templates
+        if (footBox) footBox.style.display = "none";
         startFootDetectionLoop();
     }
 }
@@ -290,4 +257,17 @@ function cancelLoops() {
     if (detectLoopId) cancelAnimationFrame(detectLoopId);
     frameLoopId = null;
     detectLoopId = null;
+}
+
+function log(msg) {
+    console.log(msg);
+    const dbg = document.getElementById("debugLog");
+    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+}
+
+function waitForOpenCV() {
+    return new Promise(resolve => {
+        const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
+        check();
+    });
 }
